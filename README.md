@@ -38,7 +38,7 @@ npm install node-fetch notifier node-cron twilio
 
 3. Configure the app:
    - Create your own `config.js` with your player's information
-   - For SMS notifications, create and configure `twilioConfig.js`
+   - For SMS notifications, create and configure `twilio.js`
 
 4. Run the application:
 ```
@@ -71,7 +71,7 @@ module.exports = {
 };
 ```
 
-### Twilio Configuration (twilioConfig.js)
+### Twilio Configuration (twilio.js)
 
 For SMS notifications, create a Twilio account and configure:
 

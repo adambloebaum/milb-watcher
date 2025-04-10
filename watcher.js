@@ -563,37 +563,3 @@ async function checkAndNotify() {
     // Start monitoring immediately
     startMonitoring();
   }
-  
-  /* 
-  ===== SETUP INSTRUCTIONS =====
-  1. Install required packages:
-     npm install node-fetch notifier node-cron twilio
-  
-  2. Configure settings in config.js:
-     - The script is already set up with your player ID (826168)
-     - The team ID for Fredericksburg Nationals (436) is already set
-     - Update PLAYER_NAME with your name
-     - Add phone numbers to receive SMS notifications
-  
-  3. For SMS notifications:
-     - Create a Twilio account at https://www.twilio.com
-     - Purchase a Twilio phone number with SMS capabilities
-     - Fill in your Twilio credentials in twilioConfig.js
-     - The app will merge twilioConfig.js with your main config
-  
-  4. Run the script:
-     node milb-notification-script.js
-     
-  5. How it works:
-     - The script checks once daily at 9 AM if there are games scheduled
-     - If games are found, it monitors starting 30 minutes before game time
-     - When you enter a game, it sends notifications to your configured phone numbers
-     - By default, it stops monitoring after detecting your entry
-     - Logs of your game entries are stored in the logs directory
-     
-  6. Conserving resources:
-     - The script only runs when there are scheduled games
-     - It checks every 5 minutes instead of continuously
-     - It automatically stops after you enter a game (configurable)
-     - It terminates when all games are complete
-  */

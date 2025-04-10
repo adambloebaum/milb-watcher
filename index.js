@@ -23,12 +23,12 @@ if (missingFiles.length > 0) {
 
 // Import and merge configuration files
 const mainConfig = require('./config');
-let twilioConfig = {};
+let twilio = {};
 
 // Try to load Twilio config if it exists
 try {
-  if (fs.existsSync(path.join(__dirname, 'twilioConfig.js'))) {
-    twilioConfig = require('./twilioConfig');
+  if (fs.existsSync(path.join(__dirname, 'twilio.js'))) {
+    twilio = require('./twilio');
     console.log('Loaded Twilio configuration.');
   } else {
     console.log('No Twilio configuration found. SMS notifications will be disabled.');
@@ -38,7 +38,7 @@ try {
 }
 
 // Merge configurations
-global.config = { ...mainConfig, ...twilioConfig };
+global.config = { ...mainConfig, ...twilio };
 
 // Start the notification script
 require('./watcher');
