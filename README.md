@@ -1,6 +1,6 @@
 # milb-watcher
 
-A notification system that alerts you when a MiLB player enters a game. Perfect for friends and family who want to know when their favorite prospect takes the field!
+A notification system that alerts you when a MiLB player enters a game.
 
 ## Features
 
@@ -8,7 +8,7 @@ A notification system that alerts you when a MiLB player enters a game. Perfect 
 - Automatically detects when a player enters a game
 - Sends notifications via:
   - Desktop notifications
-  - SMS text messages (via Twilio)
+  - SMS text messages (via carrier email-to-SMS gateways)
 - Resource-efficient:
   - Only runs when games are scheduled
   - Checks periodically (not continuously)
@@ -21,28 +21,28 @@ A notification system that alerts you when a MiLB player enters a game. Perfect 
 
 - Node.js (v12 or higher)
 - npm
-- Twilio account (optional, for SMS notifications)
+- Email account for sending SMS notifications
 
 ### Installation
 
 1. Clone this repository:
 ```
-git clone https://github.com/yourusername/ProspectAlert.git
-cd ProspectAlert
+git clone https://github.com/yourusername/milb-watcher.git
+cd milb-watcher
 ```
 
 2. Install dependencies:
 ```
-npm install node-fetch notifier node-cron twilio
+npm install
 ```
 
 3. Configure the app:
-   - Create your own `config.js` with your player's information
-   - For SMS notifications, create and configure `twilio.js`
+   - Update `config.js` with your player's information and email settings
+   - Add SMS recipients with their carriers in `config.js`
 
 4. Run the application:
 ```
-node index.js
+npm start
 ```
 
 ## Configuration
@@ -57,12 +57,26 @@ module.exports = {
   TEAM_ID: '436', // Player's team ID
 
   // League Config
-  LEAGUE_LEVEL: '12', // Class AA league level
+  LEAGUE_LEVEL: '14', // Class A league level
   
   // Notification Config
-  PHONE_NUMBERS: [
-    '+15551234567'  // Add phone numbers to receive notifications
+  SMS_RECIPIENTS: [
+    {
+      phoneNumber: '1234567890', // Phone number without special characters
+      carrier: 'verizon'         // Carrier name (att, tmobile, verizon, etc.)
+    }
+    // Add more recipients as needed
   ],
+  
+  // Email Config for Sending SMS
+  EMAIL_CONFIG: {
+    service: 'gmail',               // Email service (gmail, outlook, etc.)
+    auth: {
+      user: 'your-email@gmail.com', // Your email address
+      pass: 'your-app-password'     // Your email password or app-specific password
+    },
+    from: 'MiLB Watcher <your-email@gmail.com>' // Sender name and email
+  },
   
   // App Config
   CHECK_INTERVAL: 300000, // Check every 5 minutes (300000 ms)
@@ -71,20 +85,26 @@ module.exports = {
 };
 ```
 
-### Twilio Configuration (twilio.js)
+### Supported Carriers
 
-For SMS notifications, create a Twilio account and configure:
+The application supports many common carriers including:
+- AT&T (`att`)
+- Verizon (`verizon`)
+- T-Mobile (`tmobile`)
+- Sprint (`sprint`)
+- And many more
 
-```javascript
-module.exports = {
-  // Twilio credentials
-  TWILIO_ACCOUNT_SID: 'your_account_sid',
-  TWILIO_AUTH_TOKEN: 'your_auth_token',
-  
-  // Your Twilio phone number
-  TWILIO_PHONE_NUMBER: '+15551234567'
-};
-```
+For a complete list of supported carriers, check the `carriers.js` file.
+
+## Email-to-SMS Gateway Notes
+
+This application uses email-to-SMS gateways provided by mobile carriers to send text message alerts. Some important notes:
+
+1. For Gmail users, you'll need to use an "App Password" rather than your regular password. See [Google's App Password Guide](https://support.google.com/accounts/answer/185833) for details.
+
+2. Some carriers may have message limits or may filter messages coming from email gateways.
+
+3. Message delivery is dependent on carrier services and may experience delays.
 
 ## How It Works
 
@@ -120,4 +140,4 @@ MIT
 ## Acknowledgements
 
 - MLB Stats API for providing the data
-- Twilio for SMS notification capabilities
+- The various carrier email-to-SMS gateways for enabling notifications

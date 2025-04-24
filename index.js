@@ -5,7 +5,8 @@ const fs = require('fs');
 // Check if all required files exist
 const requiredFiles = [
   'config.js',
-  'watcher.js'
+  'watcher.js',
+  'carriers.js'  // Add the new carriers.js file to the requirements
 ];
 
 let missingFiles = [];
@@ -21,24 +22,17 @@ if (missingFiles.length > 0) {
   process.exit(1);
 }
 
-// Import and merge configuration files
-const mainConfig = require('./config');
-let twilio = {};
+// Import configuration
+const config = require('./config');
 
-// Try to load Twilio config if it exists
-try {
-  if (fs.existsSync(path.join(__dirname, 'twilio.js'))) {
-    twilio = require('./twilio');
-    console.log('Loaded Twilio configuration.');
-  } else {
-    console.log('No Twilio configuration found. SMS notifications will be disabled.');
-  }
-} catch (error) {
-  console.error('Error loading Twilio configuration:', error.message);
+// Validate configuration
+if (!config.SMS_RECIPIENTS || config.SMS_RECIPIENTS.length === 0) {
+  console.warn('No SMS recipients configured. No SMS notifications will be sent.');
 }
 
-// Merge configurations
-global.config = { ...mainConfig, ...twilio };
+if (!config.EMAIL_CONFIG || !config.EMAIL_CONFIG.auth || !config.EMAIL_CONFIG.auth.user || !config.EMAIL_CONFIG.auth.pass) {
+  console.warn('Email configuration is incomplete. SMS notifications will be disabled.');
+}
 
 // Start the notification script
 require('./watcher');
