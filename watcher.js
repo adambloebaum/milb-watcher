@@ -1,7 +1,8 @@
 // Main function to check for player and notify
 async function checkAndNotify() {
     try {
-      console.log(`[${new Date().toLocaleTimeString()}] Checking for games...`);
+      const timestamp = new Date().toLocaleTimeString();
+      // console.log(`[${timestamp}] Checking for player...`); // Reduce console spam
       
       // Reset player status at beginning of check if we're not already tracking them in a game
       if (!playerInGame) {
@@ -14,16 +15,12 @@ async function checkAndNotify() {
         await getTodaysGames();
         
       if (games.length === 0) {
-        console.log('No live games found to check.');
-        return;
+        return; // Silent return to reduce console spam
       }
-      
-      console.log(`Found ${games.length} relevant games for league level ${config.LEAGUE_LEVEL}`);
       
       // Check each game for the player
       for (const game of games) {
         if (game.status === 'Live') {
-          console.log(`Checking game ${game.id} (${game.detailedState || 'Live'})...`);
           const playerEntered = await checkPlayerInGame(game.id, game.link);
           
           if (playerEntered) {
@@ -31,7 +28,7 @@ async function checkAndNotify() {
             
             // If configured to stop after entry, prepare to stop monitoring
             if (config.STOP_AFTER_ENTRY) {
-              console.log("Player has entered the game. Will stop monitoring after this check.");
+              console.log("Player has entered the game. Will stop monitoring until tomorrow's check.");
             }
             
             // Save the entry info to a log file
@@ -110,6 +107,8 @@ let playerInGame = false;
 let monitoringTask = null;
 // Store scheduled games
 let scheduledGames = [];
+// Track if current day games are done
+let todaysGamesCompleted = false;
 
 // Function to get today's date in YYYY-MM-DD format
 function getTodayDate() {
@@ -121,6 +120,12 @@ function getTodayDate() {
 async function checkForGamesToday() {
   try {
     console.log(`[${new Date().toLocaleTimeString()}] Checking for games today...`);
+    
+    // Reset tracking variables for a new day
+    playerInGame = false;
+    notifiedGames.clear();
+    todaysGamesCompleted = false;
+    scheduledGames = [];
     
     // Get schedule for today
     const response = await fetch(`${SCHEDULE_ENDPOINT}${config.LEAGUE_LEVEL}`);
@@ -174,36 +179,54 @@ async function checkForGamesToday() {
         console.log('---');
       });
       
-      // Start monitoring 30 minutes before the first game
+      // Schedule monitoring to start at game time (not 30 min before)
       const firstGame = games[0];
       const now = new Date();
       const timeDiff = firstGame.startTime.getTime() - now.getTime();
-      const minutesUntilGame = Math.max(timeDiff / 60000, 0);
       
-      if (minutesUntilGame > 30) {
-        const monitorStartTime = new Date(firstGame.startTime.getTime() - 30 * 60000);
-        console.log(`Will start monitoring at ${monitorStartTime.toLocaleTimeString()} (30 minutes before game time)`);
+      if (timeDiff > 0) {
+        console.log(`Will start monitoring at ${firstGame.startTime.toLocaleTimeString()} (game time)`);
         
-        // Schedule the monitoring to start before the game
+        // Schedule the monitoring to start at game time
         setTimeout(() => {
           console.log("Starting game monitoring...");
           startMonitoring();
-        }, Math.max(0, monitorStartTime.getTime() - now.getTime()));
+        }, timeDiff);
       } else {
-        // Game is less than 30 minutes away or already started, begin monitoring now
-        console.log("Game starting soon or already in progress. Starting monitoring now.");
+        // Game is already in progress, begin monitoring now
+        console.log("Game already in progress. Starting monitoring now.");
         startMonitoring();
       }
+      
+      // Also set up a midnight timeout to stop everything if we're still running
+      scheduleMidnightShutdown();
       
       return true;
     } else {
       console.log("No games scheduled for your team today.");
+      todaysGamesCompleted = true;
       return false;
     }
   } catch (error) {
     console.error("Error checking for games:", error.message);
     return false;
   }
+}
+
+// Function to schedule a shutdown at midnight
+function scheduleMidnightShutdown() {
+  const now = new Date();
+  const midnight = new Date();
+  midnight.setHours(23, 59, 59, 0);
+  
+  const timeUntilMidnight = midnight.getTime() - now.getTime();
+  
+  // Set a timeout to stop monitoring at midnight
+  setTimeout(() => {
+    console.log("It's midnight. Stopping all monitoring until tomorrow's check.");
+    stopMonitoring();
+    todaysGamesCompleted = true;
+  }, timeUntilMidnight);
 }
 
 // Function to start the continuous monitoring
@@ -222,24 +245,29 @@ function startMonitoring() {
   monitoringTask = setInterval(() => {
     // Check if the game is over or if player has entered
     if (playerInGame && config.STOP_AFTER_ENTRY) {
-      console.log(`Player has entered the game. Stopping monitoring as configured.`);
+      console.log(`Player has entered the game. Stopping monitoring until tomorrow's check.`);
       stopMonitoring();
+      todaysGamesCompleted = true;
     } else {
-      // Only check if we have live games
-      const hasLiveGames = scheduledGames.some(game => game.status === 'Live');
-      if (hasLiveGames) {
-        checkAndNotify();
-      } else {
-        // Check if all games are finished
-        const allGamesFinished = scheduledGames.every(game => game.status === 'Final');
-        if (allGamesFinished) {
-          console.log("All games are finished. Stopping monitoring.");
-          stopMonitoring();
+      // Update game statuses before checking
+      updateGameStatuses().then(() => {
+        // Only check if we have live games
+        const hasLiveGames = scheduledGames.some(game => game.status === 'Live');
+        
+        if (hasLiveGames) {
+          checkAndNotify();
         } else {
-          // Update game statuses in case any have started
-          updateGameStatuses();
+          // Check if all games are finished
+          const allGamesFinished = scheduledGames.every(game => 
+            game.status === 'Final' || game.status === 'Completed' || game.status === 'Cancelled');
+            
+          if (allGamesFinished) {
+            console.log("All games are finished. Stopping monitoring until tomorrow's check.");
+            stopMonitoring();
+            todaysGamesCompleted = true;
+          }
         }
-      }
+      });
     }
   }, config.CHECK_INTERVAL);
 }
@@ -256,7 +284,7 @@ function stopMonitoring() {
 // Function to update game statuses
 async function updateGameStatuses() {
   try {
-    console.log("Updating game statuses...");
+    // console.log("Updating game statuses..."); // Reduce console spam
     
     const updatedGames = [];
     
@@ -265,14 +293,21 @@ async function updateGameStatuses() {
       
       if (response.ok) {
         const data = await response.json();
+        const oldStatus = game.status;
         game.status = data.gameData.status.abstractGameState;
         game.detailedState = data.gameData.status.detailedState;
         
-        console.log(`Game ${game.id}: ${game.detailedState}`);
-        
-        if (game.status === 'Live' && !game.wasLive) {
-          console.log(`Game ${game.id} is now live! Starting to check for player entry.`);
-          game.wasLive = true;
+        // Only log if status changed
+        if (oldStatus !== game.status) {
+          console.log(`Game ${game.id} status changed: ${game.detailedState}`);
+          
+          if (game.status === 'Live' && oldStatus !== 'Live') {
+            console.log(`Game ${game.id} is now live! Starting to check for player entry.`);
+          }
+          
+          if (game.status === 'Final' && oldStatus !== 'Final') {
+            console.log(`Game ${game.id} has ended.`);
+          }
         }
       }
       
@@ -511,30 +546,32 @@ async function sendNotification(gameId) {
   }
 }
 
-// Additional helper function to set up scheduled checks
-function setupDailyChecks() {
-  // Schedule the daily morning check
+// Setup daily check at 9 AM
+function setupDailyCheck() {
+  // Schedule the daily morning check at 9 AM
   cron.schedule('0 9 * * *', () => {
-    console.log('Running scheduled morning check for games today...');
-    checkForGamesToday();
+    console.log('=== Running scheduled 9 AM check for games today ===');
+    
+    // If there are no games today or all games are done, todaysGamesCompleted will be true
+    if (todaysGamesCompleted) {
+      checkForGamesToday();
+    } else {
+      console.log('Previous day games are still being processed. Skipping new check.');
+    }
   });
   
   console.log('Scheduled daily check set for 9:00 AM');
   
-  // Run initial check
+  // Run initial check on startup
   checkForGamesToday();
 }
 
 // Main execution
-console.log('🔍 Starting MiLB Player Entry Notification Service');
-console.log(`Monitoring for player ID: ${config.PLAYER_ID}`);
-console.log(`Team ID: ${config.TEAM_ID} (Fredericksburg Nationals)`);
-console.log(`League level: ${config.LEAGUE_LEVEL} (Class A)`);
+console.log('=== Starting MiLB Player Entry Notification Service ===');
+console.log(`Monitoring for player: ${config.PLAYER_NAME} (ID: ${config.PLAYER_ID})`);
+console.log(`Team ID: ${config.TEAM_ID}`);
+console.log(`League level: ${config.LEAGUE_LEVEL}`);
+console.log(`Checking interval: every ${config.CHECK_INTERVAL / 60000} minute(s)`);
 
-// Use cron for scheduling if configured
-if (config.CHECK_FOR_SCHEDULED_GAMES_ONLY) {
-  setupDailyChecks();
-} else {
-  // Start monitoring immediately
-  startMonitoring();
-}
+// Set up the daily check at 9 AM
+setupDailyCheck();

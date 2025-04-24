@@ -45,6 +45,117 @@ npm install
 npm start
 ```
 
+### Running on Different Machines
+
+#### Running as a Persistent Service
+
+For the script to function as intended, it needs to run continuously so it can perform daily checks at 9 AM and monitor games when they occur. Here are setup instructions for different platforms:
+
+##### Windows
+
+1. **Using Task Scheduler:**
+   - Open Task Scheduler
+   - Create a new task that runs on system startup
+   - Action: Start a program
+   - Program/script: `powershell.exe`
+   - Arguments: `-ExecutionPolicy Bypass -File "C:\path\to\milb-watcher\startup.ps1"`
+   - Create a startup.ps1 file with:
+     ```powershell
+     cd C:\path\to\milb-watcher
+     npm start
+     ```
+
+2. **Alternative using PM2 for Windows:**
+   - Install PM2 globally: `npm install -g pm2 pm2-windows-startup`
+   - Set up PM2 to start on boot: `pm2-startup install`
+   - Start the script: `pm2 start index.js --name "milb-watcher"`
+   - Save the process list: `pm2 save`
+
+##### macOS
+
+1. **Using LaunchAgents:**
+   - Create a plist file at `~/Library/LaunchAgents/com.user.milbwatcher.plist`:
+     ```xml
+     <?xml version="1.0" encoding="UTF-8"?>
+     <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+     <plist version="1.0">
+     <dict>
+         <key>Label</key>
+         <string>com.user.milbwatcher</string>
+         <key>ProgramArguments</key>
+         <array>
+             <string>/usr/local/bin/node</string>
+             <string>/path/to/milb-watcher/index.js</string>
+         </array>
+         <key>RunAtLoad</key>
+         <true/>
+         <key>KeepAlive</key>
+         <true/>
+         <key>StandardOutPath</key>
+         <string>/path/to/milb-watcher/logs/stdout.log</string>
+         <key>StandardErrorPath</key>
+         <string>/path/to/milb-watcher/logs/stderr.log</string>
+     </dict>
+     </plist>
+     ```
+   - Load the service: `launchctl load ~/Library/LaunchAgents/com.user.milbwatcher.plist`
+
+2. **Using PM2:**
+   - Install PM2 globally: `npm install -g pm2`
+   - Start the script: `pm2 start index.js --name "milb-watcher"`
+   - Set up PM2 to start on boot: `pm2 startup`
+   - Save the process list: `pm2 save`
+
+##### Linux
+
+1. **Using systemd (recommended):**
+   - Create a service file at `/etc/systemd/system/milb-watcher.service`:
+     ```
+     [Unit]
+     Description=MiLB Watcher Service
+     After=network.target
+     
+     [Service]
+     Type=simple
+     User=yourusername
+     WorkingDirectory=/path/to/milb-watcher
+     ExecStart=/usr/bin/node /path/to/milb-watcher/index.js
+     Restart=on-failure
+     
+     [Install]
+     WantedBy=multi-user.target
+     ```
+   - Enable and start the service:
+     ```
+     sudo systemctl enable milb-watcher.service
+     sudo systemctl start milb-watcher.service
+     ```
+   - Check status with: `sudo systemctl status milb-watcher.service`
+
+2. **Using PM2:**
+   - Install PM2 globally: `npm install -g pm2`
+   - Start the script: `pm2 start index.js --name "milb-watcher"`
+   - Set up PM2 to start on boot: `pm2 startup`
+   - Save the process list: `pm2 save`
+
+#### Viewing Logs
+
+- **Console output:** The script logs important events to the console
+- **Entry logs:** Game entry events are saved in `logs/entry-log-YYYY-MM-DD.json`
+- **PM2 logs:** If using PM2, view logs with `pm2 logs milb-watcher`
+- **System logs:** For systemd, use `journalctl -u milb-watcher.service`
+
+#### Troubleshooting
+
+- **Script not running:** Check if Node.js is properly installed with `node -v`
+- **No notifications:** Verify your email configuration in `config.js`
+- **Process dies unexpectedly:** If using PM2, it will automatically restart the process
+- **Wrong game times:** The script uses the system's timezone; ensure your system clock is correct
+
+### MLB API Documentation
+
+Documentation for the MLB API can be found at the following link: https://github.com/brianhaferkamp/mlbapidata
+
 ## Configuration
 
 ### Main Configuration (config.js)
@@ -100,7 +211,7 @@ For a complete list of supported carriers, check the `carriers.js` file.
 
 This application uses email-to-SMS gateways provided by mobile carriers to send text message alerts. Some important notes:
 
-1. For Gmail users, you'll need to use an "App Password" rather than your regular password. See [Google's App Password Guide](https://support.google.com/accounts/answer/185833) for details.
+1. For Gmail users, you may need to use an "App Password" rather than your regular password. See [Google's App Password Guide](https://support.google.com/accounts/answer/185833) for details.
 
 2. Some carriers may have message limits or may filter messages coming from email gateways.
 
@@ -108,11 +219,30 @@ This application uses email-to-SMS gateways provided by mobile carriers to send 
 
 ## How It Works
 
-1. The script checks once daily at 9 AM if there are games scheduled
-2. If games are found, it monitors starting 30 minutes before game time
-3. When the player enters a game, it sends notifications to all configured recipients
-4. By default, it stops monitoring after detecting player's entry
-5. Logs of game entries are stored in the `logs` directory
+1. **Daily Schedule Check**:
+   - The script runs automatically once per day at 9:00 AM
+   - It checks if your team has any games scheduled for the current day
+   - If no games are found, the script remains dormant until the next day's check at 9:00 AM
+
+2. **Game Day Monitoring**:
+   - When a game is found, the script schedules itself to start monitoring at the exact game time
+   - Once the game begins, the script checks every minute (or your configured interval) for player entry
+   - If multiple games are scheduled in one day, the script monitors all of them
+
+3. **When Player Enters Game**:
+   - As soon as the player enters the game, the script sends notifications to all configured recipients
+   - A notification is logged in the `logs` directory with a timestamp and game details
+   - By default, the script then stops monitoring until the next day's check at 9:00 AM
+
+4. **Automatic Shutdown**:
+   - If the player doesn't enter the game, monitoring stops automatically when the game ends
+   - If for any reason monitoring is still running at midnight, it will automatically stop
+   - Each day is treated as a separate cycle with a clean slate
+
+5. **Resource Efficiency**:
+   - The script only performs active checks when games are actually in progress
+   - Console output is minimized to show only important status changes
+   - All activities are synchronized to game schedules to avoid unnecessary processing
 
 ## MiLB League Level IDs
 
@@ -120,7 +250,7 @@ This application uses email-to-SMS gateways provided by mobile carriers to send 
 - 12 = Double-A
 - 13 = Class A Advanced
 - 14 = Class A
-- 15 = Class A Short Season
+- 15 = Class A Short Season (no longer exists)
 - 16 = Rookie
 - 5442 = Dominican Summer League
 
@@ -130,14 +260,4 @@ This application uses email-to-SMS gateways provided by mobile carriers to send 
   - Example: `https://www.milb.com/player/john-smith-826168`
   - The ID is the number at the end: `826168`
 
-- **Team ID**: The Fredericksburg Nationals team ID is `436`
-  - For other teams, check the team's MiLB.com URL or the API data
-
-## License
-
-MIT
-
-## Acknowledgements
-
-- MLB Stats API for providing the data
-- The various carrier email-to-SMS gateways for enabling notifications
+- **Team ID**: Check the team's MiLB.com URL or the API data
