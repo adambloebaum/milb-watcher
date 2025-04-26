@@ -1,7 +1,7 @@
 // Main function to check for player and notify
 async function checkAndNotify() {
     try {
-      const timestamp = new Date().toLocaleTimeString();
+      const timestamp = formatTime(new Date());
       // console.log(`[${timestamp}] Checking for player...`); // Reduce console spam
       
       // Reset player status at beginning of check if we're not already tracking them in a game
@@ -34,6 +34,7 @@ async function checkAndNotify() {
             // Save the entry info to a log file
             const entryInfo = {
               timestamp: new Date().toISOString(),
+              localTimestamp: new Date().toLocaleString(),
               gameId: game.id,
               playerName: config.PLAYER_NAME,
               playerId: config.PLAYER_ID
@@ -81,6 +82,7 @@ const nodemailer = require('nodemailer');
 const cron = require('node-cron');
 const fs = require('fs');
 const path = require('path');
+const moment = require('moment-timezone');
 
 // Import configuration and carrier info
 const config = require('./config');
@@ -110,6 +112,21 @@ let scheduledGames = [];
 // Track if current day games are done
 let todaysGamesCompleted = false;
 
+// Get server's local time zone
+const serverTimeZone = moment.tz.guess();
+console.log(`Server time zone detected as: ${serverTimeZone}`);
+
+// Function to convert UTC ISO date to server local time
+function convertToServerTime(dateString) {
+  // Parse the ISO date string and convert to local time
+  return new Date(dateString);
+}
+
+// Function to format time for display
+function formatTime(date) {
+  return date.toLocaleTimeString();
+}
+
 // Function to get today's date in YYYY-MM-DD format
 function getTodayDate() {
   const today = new Date();
@@ -119,7 +136,8 @@ function getTodayDate() {
 // Function to check if there are games today and schedule monitoring
 async function checkForGamesToday() {
   try {
-    console.log(`[${new Date().toLocaleTimeString()}] Checking for games today...`);
+    const now = new Date();
+    console.log(`[${formatTime(now)}] Checking for games today...`);
     
     // Reset tracking variables for a new day
     playerInGame = false;
@@ -128,7 +146,8 @@ async function checkForGamesToday() {
     scheduledGames = [];
     
     // Get schedule for today
-    const response = await fetch(`${SCHEDULE_ENDPOINT}${config.LEAGUE_LEVEL}`);
+    const todayDate = getTodayDate();
+    const response = await fetch(`${SCHEDULE_ENDPOINT}${config.LEAGUE_LEVEL}&date=${todayDate}`);
     
     if (!response.ok) {
       throw new Error(`Failed to fetch schedule: ${response.status}`);
@@ -148,14 +167,19 @@ async function checkForGamesToday() {
               game.teams.away.team.id.toString() === config.TEAM_ID || 
               game.teams.home.team.id.toString() === config.TEAM_ID)) {
             teamHasGame = true;
+            
+            // Convert game time from UTC to server local time
+            const gameDateTime = convertToServerTime(game.gameDate);
+            
             games.push({
               id: game.gamePk,
               status: game.status.abstractGameState,
               detailedState: game.status.detailedState,
               link: game.link,
-              startTime: new Date(game.gameDate),
+              startTime: gameDateTime,
               homeTeam: game.teams.home.team.name,
-              awayTeam: game.teams.away.team.name
+              awayTeam: game.teams.away.team.name,
+              rawStartTime: game.gameDate // Store original time for debugging
             });
           }
         }
@@ -175,26 +199,28 @@ async function checkForGamesToday() {
       games.forEach(game => {
         console.log(`Game: ${game.awayTeam} @ ${game.homeTeam}`);
         console.log(`Status: ${game.detailedState}`);
-        console.log(`Start time: ${game.startTime.toLocaleTimeString()}`);
+        console.log(`Start time: ${formatTime(game.startTime)} (server local time)`);
+        console.log(`Original API time (UTC): ${game.rawStartTime}`);
         console.log('---');
       });
       
-      // Schedule monitoring to start at game time (not 30 min before)
+      // Schedule monitoring to start at game time
       const firstGame = games[0];
-      const now = new Date();
-      const timeDiff = firstGame.startTime.getTime() - now.getTime();
+      const nowMs = Date.now();
+      const gameTimeMs = firstGame.startTime.getTime();
+      const timeDiff = gameTimeMs - nowMs;
       
       if (timeDiff > 0) {
-        console.log(`Will start monitoring at ${firstGame.startTime.toLocaleTimeString()} (game time)`);
+        console.log(`Will start monitoring at ${formatTime(firstGame.startTime)} - ${Math.round(timeDiff / 60000)} minutes from now`);
         
         // Schedule the monitoring to start at game time
         setTimeout(() => {
-          console.log("Starting game monitoring...");
+          console.log(`Starting game monitoring at ${formatTime(new Date())}...`);
           startMonitoring();
         }, timeDiff);
       } else {
         // Game is already in progress, begin monitoring now
-        console.log("Game already in progress. Starting monitoring now.");
+        console.log(`Game already in progress. Starting monitoring now at ${formatTime(new Date())}.`);
         startMonitoring();
       }
       
@@ -203,7 +229,7 @@ async function checkForGamesToday() {
       
       return true;
     } else {
-      console.log("No games scheduled for your team today.");
+      console.log(`No games scheduled for your team today (${todayDate}).`);
       todaysGamesCompleted = true;
       return false;
     }
@@ -215,6 +241,7 @@ async function checkForGamesToday() {
 
 // Function to schedule a shutdown at midnight
 function scheduleMidnightShutdown() {
+  // Calculate time until midnight server time
   const now = new Date();
   const midnight = new Date();
   midnight.setHours(23, 59, 59, 0);
@@ -223,7 +250,7 @@ function scheduleMidnightShutdown() {
   
   // Set a timeout to stop monitoring at midnight
   setTimeout(() => {
-    console.log("It's midnight. Stopping all monitoring until tomorrow's check.");
+    console.log(`It's midnight. Stopping all monitoring until tomorrow's check.`);
     stopMonitoring();
     todaysGamesCompleted = true;
   }, timeUntilMidnight);
@@ -324,7 +351,8 @@ async function updateGameStatuses() {
 async function getTodaysGames() {
   try {
     // Based on the MLB API documentation, we're using the correct endpoint for the league level
-    const response = await fetch(`${SCHEDULE_ENDPOINT}${config.LEAGUE_LEVEL}`);
+    const todayDate = getTodayDate();
+    const response = await fetch(`${SCHEDULE_ENDPOINT}${config.LEAGUE_LEVEL}&date=${todayDate}`);
     
     if (!response.ok) {
       throw new Error(`Failed to fetch schedule: ${response.status}`);
@@ -344,11 +372,17 @@ async function getTodaysGames() {
             
             if (game.status.abstractGameState === 'Live' || 
                 game.status.abstractGameState === 'Preview') {
+              
+              // Convert game time to server local time
+              const gameDateTime = convertToServerTime(game.gameDate);
+              
               relevantGames.push({
                 id: game.gamePk,
                 status: game.status.abstractGameState,
                 detailedState: game.status.detailedState,
-                link: game.link // Store the API link for this game
+                link: game.link, // Store the API link for this game
+                startTime: gameDateTime,
+                rawStartTime: game.gameDate
               });
             }
           }
@@ -506,7 +540,8 @@ async function sendNotification(gameId) {
       wait: true
     });
     
-    console.log(`[${new Date().toLocaleTimeString()}] 🎉 ${config.PLAYER_NAME} has entered game ${gameId}!`);
+    const timeNow = formatTime(new Date());
+    console.log(`[${timeNow}] 🎉 ${config.PLAYER_NAME} has entered game ${gameId}!`);
     
     // Send SMS notifications via email-to-SMS if configured
     if (emailTransporter && config.SMS_RECIPIENTS && config.SMS_RECIPIENTS.length > 0) {
@@ -546,11 +581,14 @@ async function sendNotification(gameId) {
   }
 }
 
-// Setup daily check at 9 AM
+// Setup daily check at 9 AM local server time
 function setupDailyCheck() {
-  // Schedule the daily morning check at 9 AM
-  cron.schedule('0 9 * * *', () => {
-    console.log('=== Running scheduled 9 AM check for games today ===');
+  // Schedule for 9 AM server time
+  const cronSchedule = '0 9 * * *';
+  
+  // Schedule the daily morning check
+  cron.schedule(cronSchedule, () => {
+    console.log(`=== Running scheduled 9:00 AM check for games today (${formatTime(new Date())}) ===`);
     
     // If there are no games today or all games are done, todaysGamesCompleted will be true
     if (todaysGamesCompleted) {
@@ -560,7 +598,7 @@ function setupDailyCheck() {
     }
   });
   
-  console.log('Scheduled daily check set for 9:00 AM');
+  console.log(`Scheduled daily check set for 9:00 AM (server time: ${serverTimeZone})`);
   
   // Run initial check on startup
   checkForGamesToday();
@@ -568,10 +606,12 @@ function setupDailyCheck() {
 
 // Main execution
 console.log('=== Starting MiLB Player Entry Notification Service ===');
+console.log(`Server running in time zone: ${serverTimeZone}`);
 console.log(`Monitoring for player: ${config.PLAYER_NAME} (ID: ${config.PLAYER_ID})`);
 console.log(`Team ID: ${config.TEAM_ID}`);
 console.log(`League level: ${config.LEAGUE_LEVEL}`);
 console.log(`Checking interval: every ${config.CHECK_INTERVAL / 60000} minute(s)`);
+console.log(`All times will be displayed in server's local time.`);
 
 // Set up the daily check at 9 AM
 setupDailyCheck();
