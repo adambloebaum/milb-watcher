@@ -77,7 +77,7 @@ async function checkAndNotify() {
 
 // MiLB Player Game Entry Notification Script
 const fetch = require('node-fetch');
-const notifier = require('node-notifier');
+// Desktop notifications removed since this is a server-only app
 const nodemailer = require('nodemailer');
 const cron = require('node-cron');
 const fs = require('fs');
@@ -623,14 +623,6 @@ async function checkPlayerInGame(gameId, gameLink) {
 // Function to send a notification
 async function sendNotification(gameId) {
   try {
-    // Local desktop notification
-    notifier.notify({
-      title: 'MiLB Player Alert',
-      message: `${config.PLAYER_NAME} has entered the game!`,
-      sound: true,
-      wait: true
-    });
-    
     const timeNow = formatTime(new Date());
     console.log(`[${timeNow}] 🎉 ${config.PLAYER_NAME} has entered game ${gameId}!`);
     
