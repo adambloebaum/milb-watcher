@@ -46,7 +46,7 @@ async function checkAndNotify() {
             }
             
             // Write to log file
-            const logPath = path.join('./logs', `entry-log-${getTodayDate()}.json`);
+            const logPath = path.join('./logs', `entry-log-${getTodayDateString()}.json`);
             let logs = [];
             
             // Read existing logs if file exists
@@ -87,6 +87,91 @@ const moment = require('moment-timezone');
 // Import configuration and carrier info
 const config = require('./config');
 const carriers = require('./carriers');
+
+// Create logs directory if it doesn't exist
+const logsDir = path.join(__dirname, 'logs');
+if (!fs.existsSync(logsDir)) {
+  fs.mkdirSync(logsDir);
+}
+
+// Set up daily log file for terminal output
+const today = new Date();
+const logFileName = `console-log-${getTodayDateString()}.log`;
+const logFilePath = path.join(logsDir, logFileName);
+
+// Create a write stream for the log file
+const logFileStream = fs.createWriteStream(logFilePath, { flags: 'a' });
+
+// Override console.log, console.error, etc. to write to both console and log file
+const originalConsoleLog = console.log;
+const originalConsoleError = console.error;
+const originalConsoleWarn = console.warn;
+
+console.log = function() {
+  const timestamp = new Date().toISOString();
+  const args = Array.from(arguments);
+  const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ');
+  
+  logFileStream.write(`[${timestamp}] ${message}\n`);
+  originalConsoleLog.apply(console, arguments);
+};
+
+console.error = function() {
+  const timestamp = new Date().toISOString();
+  const args = Array.from(arguments);
+  const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ');
+  
+  logFileStream.write(`[${timestamp}] ERROR: ${message}\n`);
+  originalConsoleError.apply(console, arguments);
+};
+
+console.warn = function() {
+  const timestamp = new Date().toISOString();
+  const args = Array.from(arguments);
+  const message = args.map(arg => typeof arg === 'object' ? JSON.stringify(arg) : arg).join(' ');
+  
+  logFileStream.write(`[${timestamp}] WARNING: ${message}\n`);
+  originalConsoleWarn.apply(console, arguments);
+};
+
+// Function to clean up old log files (older than 30 days)
+function cleanupOldLogs() {
+  try {
+    console.log("Checking for old log files to clean up...");
+    
+    const files = fs.readdirSync(logsDir);
+    const now = new Date();
+    const thirtyDaysAgo = new Date(now - 30 * 24 * 60 * 60 * 1000);
+    
+    let deletedCount = 0;
+    
+    for (const file of files) {
+      const filePath = path.join(logsDir, file);
+      
+      // Skip if not a file
+      if (!fs.statSync(filePath).isFile()) continue;
+      
+      // Check if it's a log file
+      if (file.startsWith('console-log-') || file.startsWith('entry-log-')) {
+        const stats = fs.statSync(filePath);
+        
+        // If file is older than 30 days, delete it
+        if (stats.mtime < thirtyDaysAgo) {
+          fs.unlinkSync(filePath);
+          deletedCount++;
+        }
+      }
+    }
+    
+    if (deletedCount > 0) {
+      console.log(`Cleaned up ${deletedCount} log files older than 30 days.`);
+    } else {
+      console.log("No old log files to clean up.");
+    }
+  } catch (error) {
+    console.error("Error cleaning up old logs:", error.message);
+  }
+}
 
 // Email transporter for SMS notifications
 let emailTransporter = null;
@@ -129,6 +214,12 @@ function formatTime(date) {
 
 // Function to get today's date in YYYY-MM-DD format
 function getTodayDate() {
+  const today = new Date();
+  return today.toISOString().split('T')[0];
+}
+
+// Function to get today's date string for filenames (YYYY-MM-DD)
+function getTodayDateString() {
   const today = new Date();
   return today.toISOString().split('T')[0];
 }
@@ -592,6 +683,22 @@ function setupDailyCheck() {
     
     // If there are no games today or all games are done, todaysGamesCompleted will be true
     if (todaysGamesCompleted) {
+      // Create a new log file for today if we're starting a new day
+      // Close the current log file stream and create a new one
+      if (logFileStream) {
+        logFileStream.end();
+      }
+      
+      const newLogFileName = `console-log-${getTodayDateString()}.log`;
+      const newLogFilePath = path.join(logsDir, newLogFileName);
+      logFileStream = fs.createWriteStream(newLogFilePath, { flags: 'a' });
+      
+      console.log(`Created new log file for today: ${newLogFileName}`);
+      
+      // Clean up old log files
+      cleanupOldLogs();
+      
+      // Check for games
       checkForGamesToday();
     } else {
       console.log('Previous day games are still being processed. Skipping new check.');
@@ -599,6 +706,15 @@ function setupDailyCheck() {
   });
   
   console.log(`Scheduled daily check set for 9:00 AM (server time: ${serverTimeZone})`);
+  
+  // Also schedule log cleanup to run daily at 1 AM
+  cron.schedule('0 1 * * *', () => {
+    console.log("Running scheduled cleanup of old log files...");
+    cleanupOldLogs();
+  });
+  
+  // Run initial log cleanup
+  cleanupOldLogs();
   
   // Run initial check on startup
   checkForGamesToday();
@@ -612,6 +728,59 @@ console.log(`Team ID: ${config.TEAM_ID}`);
 console.log(`League level: ${config.LEAGUE_LEVEL}`);
 console.log(`Checking interval: every ${config.CHECK_INTERVAL / 60000} minute(s)`);
 console.log(`All times will be displayed in server's local time.`);
+console.log(`Console logs are being saved to: ${logFilePath}`);
+
+// Process termination handling
+process.on('SIGINT', () => {
+  console.log('Process terminated. Closing log file.');
+  if (logFileStream) {
+    logFileStream.end();
+  }
+  process.exit();
+});
+
+process.on('SIGTERM', () => {
+  console.log('Process terminated. Closing log file.');
+  if (logFileStream) {
+    logFileStream.end();
+  }
+  process.exit();
+});
 
 // Set up the daily check at 9 AM
 setupDailyCheck();
+
+// Export the scheduled games and a callback to track monitoring status
+let monitorStatusCallback = null;
+
+// Function to set the monitoring status callback
+function setMonitoringStatusCallback(callback) {
+  monitorStatusCallback = callback;
+  // Initialize with current status
+  if (callback && typeof callback === 'function') {
+    callback(monitoringTask !== null);
+  }
+}
+
+// Update the monitor status when it changes
+const originalStartMonitoring = startMonitoring;
+startMonitoring = function() {
+  originalStartMonitoring.apply(this, arguments);
+  if (monitorStatusCallback && typeof monitorStatusCallback === 'function') {
+    monitorStatusCallback(monitoringTask !== null);
+  }
+};
+
+const originalStopMonitoring = stopMonitoring;
+stopMonitoring = function() {
+  originalStopMonitoring.apply(this, arguments);
+  if (monitorStatusCallback && typeof monitorStatusCallback === 'function') {
+    monitorStatusCallback(monitoringTask !== null);
+  }
+};
+
+// Export the necessary variables and functions
+module.exports = {
+  scheduledGames,
+  setMonitoringStatusCallback
+};

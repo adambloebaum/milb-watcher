@@ -17,7 +17,14 @@ A notification system that alerts you when a MiLB player enters a game.
   - All dates and times are in the server's local time zone
   - Game times from the API are automatically converted from UTC
   - No complicated time zone management needed
-- Tracks game entry details in logs
+- Logging & Monitoring:
+  - Tracks game entry details in logs
+  - Logs all console output to daily log files 
+  - Automatically cleans up log files older than 30 days
+  - Provides HTTP endpoints for health checks and status
+- Cloud-ready:
+  - Easy deployment to Fly.io (see DEPLOYMENT.md)
+  - Includes health check endpoints
 
 ## Setup
 
@@ -48,6 +55,15 @@ npm install
 ```
 npm start
 ```
+
+### HTTP Endpoints
+
+The application includes a simple HTTP server that provides:
+
+- **Health check**: `GET /health` - Returns status information including uptime
+- **Stats**: `GET /stats` - Returns information about the player being monitored and current monitoring status
+
+By default, the server runs on port 8080, but you can change it by setting the `PORT` environment variable.
 
 ### Time Zone Handling
 
@@ -152,9 +168,14 @@ For the script to function as intended, it needs to run continuously so it can p
    - Set up PM2 to start on boot: `pm2 startup`
    - Save the process list: `pm2 save`
 
+#### Cloud Deployment
+
+For deploying to Fly.io or other cloud providers, see the [DEPLOYMENT.md](DEPLOYMENT.md) guide.
+
 #### Viewing Logs
 
-- **Console output:** The script logs important events to the console
+- **Console output:** The script logs important events to the console and daily log files in the `logs` directory
+- **Daily log files:** Console output is saved to `logs/console-log-YYYY-MM-DD.log`
 - **Entry logs:** Game entry events are saved in `logs/entry-log-YYYY-MM-DD.json`
 - **PM2 logs:** If using PM2, view logs with `pm2 logs milb-watcher`
 - **System logs:** For systemd, use `journalctl -u milb-watcher.service`
@@ -209,7 +230,7 @@ module.exports = {
   // App Config
   CHECK_INTERVAL: 60000, // Check every minute (60000 ms)
   STOP_AFTER_ENTRY: true, // Stop checking after player enters game
-  CHECK_FOR_SCHEDULED_GAMES_ONLY: true // Only run when games are scheduled
+  CHECK_FOR_SCHEDULED_GAMES_ONLY: true // Only run when there are scheduled games
 };
 ```
 
@@ -256,6 +277,11 @@ This application uses email-to-SMS gateways provided by mobile carriers to send 
    - If the player doesn't enter the game, monitoring stops automatically when the game ends
    - If for any reason monitoring is still running at midnight, it will automatically stop
    - Each day is treated as a separate cycle with a clean slate
+
+5. **Log Management**:
+   - All console output is saved to daily log files in the `logs` directory
+   - Log files older than 30 days are automatically deleted
+   - Game entry events are stored in separate JSON log files
 
 ## MiLB League Level IDs
 
