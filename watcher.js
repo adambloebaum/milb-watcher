@@ -77,7 +77,6 @@ async function checkAndNotify() {
 
 // MiLB Player Game Entry Notification Script
 const fetch = require('node-fetch');
-// Desktop notifications removed since this is a server-only app
 const nodemailer = require('nodemailer');
 const cron = require('node-cron');
 const fs = require('fs');
