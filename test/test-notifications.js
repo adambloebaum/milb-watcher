@@ -12,7 +12,7 @@ const TEST_CONFIG = {
     },
     SMS_RECIPIENTS: [
         {
-            phoneNumber: '9199959277',
+            phoneNumber: '1234567890',
             carrier: 'verizon'
         }
         // Add more test recipients as needed
