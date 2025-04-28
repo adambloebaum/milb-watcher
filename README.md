@@ -22,9 +22,6 @@ A notification system that alerts you when a MiLB player enters a game.
   - Logs all console output to daily log files 
   - Automatically cleans up log files older than 30 days
   - Provides HTTP endpoints for health checks and status
-- Cloud-ready:
-  - Easy deployment to Fly.io (see DEPLOYMENT.md)
-  - Includes health check endpoints
 
 ## Setup
 
@@ -33,6 +30,7 @@ A notification system that alerts you when a MiLB player enters a game.
 - Node.js (v12 or higher)
 - npm
 - Email account for sending SMS notifications
+- A server to run the service (Linux recommended)
 
 ### Installation
 
@@ -48,12 +46,57 @@ npm install
 ```
 
 3. Configure the app:
+   - Copy `example_config.js` to `config.js`
    - Update `config.js` with your player's information and email settings
    - Add SMS recipients with their carriers in `config.js`
 
 4. Run the application:
 ```
 npm start
+```
+
+### Running as a Service
+
+#### Linux (systemd)
+
+1. Create a service file at `/etc/systemd/system/milb-watcher.service`:
+```ini
+[Unit]
+Description=MiLB Player Game Entry Notification Service
+After=network.target
+
+[Service]
+Type=simple
+User=yourusername
+WorkingDirectory=/path/to/milb-watcher
+ExecStart=/usr/bin/node /path/to/milb-watcher/index.js
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target
+```
+
+2. Enable and start the service:
+```bash
+sudo systemctl enable milb-watcher.service
+sudo systemctl start milb-watcher.service
+```
+
+3. Check status:
+```bash
+sudo systemctl status milb-watcher.service
+```
+
+#### Windows
+
+1. Install the service using NSSM (Non-Sucking Service Manager):
+```bash
+nssm install milb-watcher "C:\Program Files\nodejs\node.exe" "C:\path\to\milb-watcher\index.js"
+nssm set milb-watcher AppDirectory "C:\path\to\milb-watcher"
+nssm set milb-watcher DisplayName "MiLB Watcher"
+nssm set milb-watcher Description "Monitors MiLB games for player entry"
+nssm start milb-watcher
 ```
 
 ### HTTP Endpoints
@@ -75,117 +118,18 @@ The script handles all time conversions automatically:
 
 This approach ensures consistency regardless of team locations or travel schedules, and is particularly helpful when monitoring teams that play across multiple time zones.
 
-### Running on Different Machines
+### Log Management
 
-#### Running as a Persistent Service
+- All console output is saved to daily log files in the `logs` directory
+- Log files older than 30 days are automatically deleted
+- Game entry events are stored in separate JSON log files
 
-For the script to function as intended, it needs to run continuously so it can perform daily checks at 9 AM and monitor games when they occur. Here are setup instructions for different platforms:
+### Troubleshooting
 
-##### Windows
-
-1. **Using Task Scheduler:**
-   - Open Task Scheduler
-   - Create a new task that runs on system startup
-   - Action: Start a program
-   - Program/script: `powershell.exe`
-   - Arguments: `-ExecutionPolicy Bypass -File "C:\path\to\milb-watcher\startup.ps1"`
-   - Create a startup.ps1 file with:
-     ```powershell
-     cd C:\path\to\milb-watcher
-     npm start
-     ```
-
-2. **Alternative using PM2 for Windows:**
-   - Install PM2 globally: `npm install -g pm2 pm2-windows-startup`
-   - Set up PM2 to start on boot: `pm2-startup install`
-   - Start the script: `pm2 start index.js --name "milb-watcher"`
-   - Save the process list: `pm2 save`
-
-##### macOS
-
-1. **Using LaunchAgents:**
-   - Create a plist file at `~/Library/LaunchAgents/com.user.milbwatcher.plist`:
-     ```xml
-     <?xml version="1.0" encoding="UTF-8"?>
-     <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
-     <plist version="1.0">
-     <dict>
-         <key>Label</key>
-         <string>com.user.milbwatcher</string>
-         <key>ProgramArguments</key>
-         <array>
-             <string>/usr/local/bin/node</string>
-             <string>/path/to/milb-watcher/index.js</string>
-         </array>
-         <key>RunAtLoad</key>
-         <true/>
-         <key>KeepAlive</key>
-         <true/>
-         <key>StandardOutPath</key>
-         <string>/path/to/milb-watcher/logs/stdout.log</string>
-         <key>StandardErrorPath</key>
-         <string>/path/to/milb-watcher/logs/stderr.log</string>
-     </dict>
-     </plist>
-     ```
-   - Load the service: `launchctl load ~/Library/LaunchAgents/com.user.milbwatcher.plist`
-
-2. **Using PM2:**
-   - Install PM2 globally: `npm install -g pm2`
-   - Start the script: `pm2 start index.js --name "milb-watcher"`
-   - Set up PM2 to start on boot: `pm2 startup`
-   - Save the process list: `pm2 save`
-
-##### Linux
-
-1. **Using systemd (recommended):**
-   - Create a service file at `/etc/systemd/system/milb-watcher.service`:
-     ```
-     [Unit]
-     Description=MiLB Watcher Service
-     After=network.target
-     
-     [Service]
-     Type=simple
-     User=yourusername
-     WorkingDirectory=/path/to/milb-watcher
-     ExecStart=/usr/bin/node /path/to/milb-watcher/index.js
-     Restart=on-failure
-     
-     [Install]
-     WantedBy=multi-user.target
-     ```
-   - Enable and start the service:
-     ```
-     sudo systemctl enable milb-watcher.service
-     sudo systemctl start milb-watcher.service
-     ```
-   - Check status with: `sudo systemctl status milb-watcher.service`
-
-2. **Using PM2:**
-   - Install PM2 globally: `npm install -g pm2`
-   - Start the script: `pm2 start index.js --name "milb-watcher"`
-   - Set up PM2 to start on boot: `pm2 startup`
-   - Save the process list: `pm2 save`
-
-#### Cloud Deployment
-
-For deploying to Fly.io or other cloud providers, see the [DEPLOYMENT.md](DEPLOYMENT.md) guide.
-
-#### Viewing Logs
-
-- **Console output:** The script logs important events to the console and daily log files in the `logs` directory
-- **Daily log files:** Console output is saved to `logs/console-log-YYYY-MM-DD.log`
-- **Entry logs:** Game entry events are saved in `logs/entry-log-YYYY-MM-DD.json`
-- **PM2 logs:** If using PM2, view logs with `pm2 logs milb-watcher`
-- **System logs:** For systemd, use `journalctl -u milb-watcher.service`
-
-#### Troubleshooting
-
-- **Script not running:** Check if Node.js is properly installed with `node -v`
-- **No notifications:** Verify your email configuration in `config.js`
-- **Process dies unexpectedly:** If using PM2, it will automatically restart the process
-- **Wrong game times:** Ensure your server's system clock is correct
+- **Service not starting**: Check system logs for errors
+- **No notifications**: Verify your email configuration in `config.js`
+- **Wrong game times**: Ensure your server's system clock is correct
+- **Permission issues**: Make sure the service user has proper permissions to the application directory
 
 ### MLB API Documentation
 

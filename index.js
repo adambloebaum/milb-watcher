@@ -60,7 +60,7 @@ global.scheduledGames = [];
 const requiredFiles = [
   'config.js',
   'watcher.js',
-  'carriers.js'  // Add the new carriers.js file to the requirements
+  'carriers.js'
 ];
 
 let missingFiles = [];
@@ -100,3 +100,32 @@ if (typeof watcher.setMonitoringStatusCallback === 'function') {
     global.monitoringActive = isActive;
   });
 }
+
+// Handle process termination gracefully
+process.on('SIGTERM', () => {
+  console.log('Received SIGTERM signal. Shutting down gracefully...');
+  server.close(() => {
+    console.log('HTTP server closed.');
+    process.exit(0);
+  });
+});
+
+process.on('SIGINT', () => {
+  console.log('Received SIGINT signal. Shutting down gracefully...');
+  server.close(() => {
+    console.log('HTTP server closed.');
+    process.exit(0);
+  });
+});
+
+// Handle uncaught exceptions
+process.on('uncaughtException', (err) => {
+  console.error('Uncaught Exception:', err);
+  // Don't exit immediately, let the process manager handle it
+});
+
+// Handle unhandled promise rejections
+process.on('unhandledRejection', (reason, promise) => {
+  console.error('Unhandled Rejection at:', promise, 'reason:', reason);
+  // Don't exit immediately, let the process manager handle it
+});

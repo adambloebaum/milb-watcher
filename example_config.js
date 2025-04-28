@@ -1,3 +1,6 @@
+// This is an example configuration file. Copy this to config.js and update with your settings.
+// Make sure to add config.js to your .gitignore file to keep your sensitive information private.
+
 module.exports = {
     // Player Config
     PLAYER_ID: '123456', // Your player ID

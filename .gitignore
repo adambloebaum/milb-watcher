@@ -1,4 +1,7 @@
 logs/
 data/
 node_modules/
-secrets.txt
+config.js
+.env
+*.log
+.DS_Store
