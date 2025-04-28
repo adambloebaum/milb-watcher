@@ -21,8 +21,8 @@ RUN if [ ! -f carriers.js ]; then \
     echo "// Mobile carrier email-to-SMS gateway addresses\nconst carriers = {\n  att: 'txt.att.net',\n  tmobile: 'tmomail.net',\n  verizon: 'vtext.com',\n  sprint: 'messaging.sprintpcs.com',\n  cricket: 'sms.cricketwireless.net',\n  boost: 'sms.myboostmobile.com',\n  googlefi: 'msg.fi.google.com',\n  uscellular: 'email.uscc.net',\n  virgin: 'vmobl.com',\n  metro: 'mymetropcs.com',\n  xfinity: 'vtext.com',\n};\n\nfunction getEmailAddress(phoneNumber, carrier) {\n  const cleanPhone = phoneNumber.toString().replace(/\\D/g, '');\n  if (!carriers[carrier.toLowerCase()]) {\n    throw new Error(`Carrier '\${carrier}' is not supported. Supported carriers: \${Object.keys(carriers).join(', ')}`);\n  }\n  return `\${cleanPhone}@\${carriers[carrier.toLowerCase()]}`;\n}\n\nmodule.exports = {\n  getEmailAddress\n};" > carriers.js; \
     fi
 
-# Create logs directory
-RUN mkdir -p logs
+# Create logs directory in the mounted volume path
+RUN mkdir -p /data/logs
 
 # Set environment variables
 ENV NODE_ENV=production

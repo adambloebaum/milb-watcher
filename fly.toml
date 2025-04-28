@@ -14,7 +14,7 @@ primary_region = 'mia'
 
 [[mounts]]
   source = 'milb_logs'
-  destination = '/app/logs'
+  destination = '/data/logs'
   initial_size = '1gb'
 
 [http_service]
