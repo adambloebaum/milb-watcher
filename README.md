@@ -148,6 +148,7 @@ Application-specific logs are still written to the `logs` directory in the appli
    - Verify email configuration in `config.js`
    - Check service logs for errors
    - Test email configuration manually
+   - Use the test scripts in the `test` directory to verify API and notification functionality
 
 3. **Permission issues**:
    - Ensure the `milbwatcher` user owns the application directory:
@@ -158,6 +159,32 @@ Application-specific logs are still written to the `logs` directory in the appli
 4. **Disk space issues**:
    - Monitor log file sizes
    - Set up log rotation if needed
+
+### Testing and Debugging
+
+The application includes test scripts to help diagnose issues:
+
+1. **API Testing**:
+   ```bash
+   cd /opt/milb-watcher/test
+   node test-api.js
+   ```
+   This will test all MLB API endpoints used by the application.
+
+2. **Notification Testing**:
+   ```bash
+   cd /opt/milb-watcher/test
+   node test-notifications.js
+   ```
+   This will send test notifications to verify the SMS system is working.
+
+Before running the tests:
+1. Stop the service: `sudo systemctl stop milb-watcher`
+2. Update the test configuration in the respective test files
+3. Run the tests
+4. Restart the service: `sudo systemctl start milb-watcher`
+
+For more information about the test scripts, see the [test/README.md](test/README.md) file.
 
 ### Security Considerations
 
