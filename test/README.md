@@ -1,105 +1,88 @@
-# MiLB Watcher Test Suite
+# MiLB Player Watcher Test Suite
 
-This directory contains test scripts to verify the functionality of the MiLB Watcher application.
+This directory contains test scripts for the MiLB Player Watcher application.
 
-## Test Scripts
+## Test Files
 
 ### test-api.js
-
-Tests the MLB Stats API endpoints used by the application. This script verifies:
+Tests the MLB Stats API integration, including:
 - Player information retrieval
-- Team information lookup
-- Game schedule checking
-- Live game data access
-
-#### Usage
-
-1. Update the player ID in the test configuration:
-```javascript
-const TEST_CONFIG = {
-    PLAYER_ID: '123456'  // Your player's ID
-};
-```
-
-2. Run the test:
-```bash
-node test-api.js
-```
-
-#### Test Flow
-
-1. **Player Information Test**
-   - Fetches player details including current team
-   - Verifies team information is available
-   - Returns team ID and league level
-
-2. **Schedule API Test**
-   - Uses player's team ID to find today's games
-   - Displays game details including:
-     - Game ID
-     - Teams playing
-     - Game status
-     - Start time
-
-3. **Game API Test**
-   - Finds a game for the player's team
-   - Checks if the player is in the game
-   - Displays player's position and stats if available
-
-#### Expected Output
-
-The script will output:
-- Player details (name, position, team)
-- Today's games for the player's team
-- Game details including player participation
+- Schedule checking
+- Game status monitoring
+- Player lineup checking
 
 ### test-notifications.js
+Tests the notification system, including:
+- Email/SMS configuration
+- Notification delivery
+- Error handling
 
-Tests the notification system (SMS via email).
+## API Testing
 
-#### Usage
+The test suite verifies the following MLB Stats API endpoints:
 
-1. Configure your email settings in the script:
+1. **Player API**
+   - Endpoint: `/api/v1/people/{playerId}?hydrate=currentTeam`
+   - Retrieves player information including current team
+   - Determines league level automatically based on team type
+
+2. **Schedule API**
+   - Endpoint: `/api/v1/schedule/games/?sportId={leagueLevel}&date={date}`
+   - Fetches games for the player's current team
+   - League level is determined automatically:
+     - MLB teams: sportId = 1
+     - Minor league teams: uses specific sport ID
+
+3. **Game API**
+   - Endpoint: `/api/v1/game/{gameId}/feed/live`
+   - Monitors game status and player participation
+   - Checks boxscore for player lineup information
+
+## Configuration
+
+The test suite uses the following configuration:
+
 ```javascript
-const emailConfig = {
-    service: 'gmail',               // Email service (gmail, outlook, etc.)
-    auth: {
-        user: 'your-email@gmail.com', // Your email address
-        pass: 'your-app-password'     // Your email password or app-specific password
-    }
+const TEST_CONFIG = {
+    PLAYER_ID: '571578',  // Example player ID
 };
 ```
 
-2. Configure SMS recipients:
-```javascript
-const smsRecipients = [
-    {
-        phoneNumber: '1234567890', // Phone number without special characters
-        carrier: 'verizon'         // Carrier name (att, tmobile, verizon, etc.)
-    }
-];
-```
+## Running Tests
 
-3. Run the test:
-```bash
-node test-notifications.js
-```
+1. Navigate to the test directory:
+   ```bash
+   cd test
+   ```
 
-#### Test Flow
+2. Run the API tests:
+   ```bash
+   node test-api.js
+   ```
 
-1. **Email Transporter Test**
-   - Verifies email configuration
-   - Tests connection to email server
+3. Run the notification tests:
+   ```bash
+   node test-notifications.js
+   ```
 
-2. **Notification Test**
-   - Sends test notifications to all configured recipients
-   - Verifies successful delivery
+## Test Output
 
-#### Expected Output
+The test suite provides detailed output including:
+- Player information
+- Team details
+- Game schedules
+- Game status
+- Player lineup information
+- Notification delivery status
 
-The script will output:
-- Email configuration test results
-- Notification delivery status for each recipient
+## Error Handling
+
+The test suite includes comprehensive error handling for:
+- API connection issues
+- Invalid player IDs
+- Missing team information
+- Game status changes
+- Notification delivery failures
 
 ## Troubleshooting
 

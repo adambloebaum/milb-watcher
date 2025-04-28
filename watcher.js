@@ -88,7 +88,7 @@ const config = require('./config');
 const carriers = require('./carriers');
 
 // Create logs directory if it doesn't exist
-const logsDir = '/data/logs';
+const logsDir = path.join(__dirname, 'logs');
 if (!fs.existsSync(logsDir)) {
   fs.mkdirSync(logsDir, { recursive: true });
 }
@@ -222,136 +222,165 @@ function getTodayDateString() {
 // Function to get player's current team and league level
 async function getPlayerTeamInfo() {
   try {
-    const response = await fetch(PLAYER_ENDPOINT);
+    const response = await fetch(`https://statsapi.mlb.com/api/v1/people/${config.PLAYER_ID}?hydrate=currentTeam`);
     if (!response.ok) {
-      throw new Error(`Failed to fetch player data: ${response.status}`);
+      throw new Error(`HTTP error! status: ${response.status}`);
     }
-    
     const data = await response.json();
-    if (data.people && data.people.length > 0) {
-      const player = data.people[0];
-      return {
-        teamId: player.currentTeam?.id,
-        teamName: player.currentTeam?.name,
-        leagueLevel: player.currentTeam?.parentOrgId ? '14' : null // Default to Class A if in minors
-      };
+    const player = data.people[0];
+    
+    if (!player) {
+      throw new Error('Player not found');
     }
-    return null;
+
+    if (!player.currentTeam) {
+      throw new Error('Player has no current team');
+    }
+
+    // Determine league level based on team's sport
+    let leagueLevel;
+    const sportName = player.currentTeam.sport?.name?.toLowerCase() || '';
+    
+    if (sportName.includes('major league')) {
+      leagueLevel = '1'; // MLB
+    } else if (sportName.includes('triple-a')) {
+      leagueLevel = '11'; // Triple-A
+    } else if (sportName.includes('double-a')) {
+      leagueLevel = '12'; // Double-A
+    } else if (sportName.includes('high-a')) {
+      leagueLevel = '13'; // High-A
+    } else if (sportName.includes('single-a')) {
+      leagueLevel = '14'; // Single-A
+    } else if (sportName.includes('rookie')) {
+      leagueLevel = '16'; // Rookie
+    } else {
+      // Default to MLB if we can't determine the level
+      leagueLevel = '1';
+    }
+
+    const teamInfo = {
+      teamId: player.currentTeam.id,
+      teamName: player.currentTeam.name,
+      leagueLevel: leagueLevel
+    };
+
+    console.log(`Team: ${teamInfo.teamName} (League Level: ${leagueLevel})`);
+    return teamInfo;
   } catch (error) {
-    console.error('Error getting player team info:', error.message);
+    console.error('Error fetching player team info:', error);
     return null;
   }
 }
 
-// Function to check if there are games today and schedule monitoring
+// Function to check for games today and schedule monitoring
 async function checkForGamesToday() {
-  try {
-    const now = new Date();
-    console.log(`[${formatTime(now)}] Checking for games today...`);
-    
-    // Reset tracking variables for a new day
-    playerInGame = false;
-    notifiedGames.clear();
-    todaysGamesCompleted = false;
-    scheduledGames = [];
-    
-    // Get player's team info
-    const playerInfo = await getPlayerTeamInfo();
-    if (!playerInfo || !playerInfo.teamId) {
-      console.log('Could not determine player\'s team. Will check again later.');
-      return false;
-    }
-    
-    // Get schedule for today
-    const todayDate = getTodayDate();
-    const response = await fetch(`${MILB_API_BASE}/schedule/games/?sportId=${playerInfo.leagueLevel}&date=${todayDate}`);
-    
-    if (!response.ok) {
-      throw new Error(`Failed to fetch schedule: ${response.status}`);
-    }
-    
-    const data = await response.json();
-    
-    // Check if our team has a game today
-    let teamHasGame = false;
-    let games = [];
-    
-    if (data.dates && data.dates.length > 0) {
-      for (const date of data.dates) {
-        for (const game of date.games) {
-          // Check if our team is playing
-          if (game.teams.away.team.id.toString() === playerInfo.teamId.toString() || 
-              game.teams.home.team.id.toString() === playerInfo.teamId.toString()) {
-            teamHasGame = true;
-            
-            // Convert game time from UTC to server local time
-            const gameDateTime = convertToServerTime(game.gameDate);
-            
-            games.push({
-              id: game.gamePk,
-              status: game.status.abstractGameState,
-              detailedState: game.status.detailedState,
-              link: game.link,
-              startTime: gameDateTime,
-              homeTeam: game.teams.home.team.name,
-              awayTeam: game.teams.away.team.name,
-              rawStartTime: game.gameDate
-            });
-          }
-        }
-      }
-    }
-    
-    if (teamHasGame) {
-      console.log(`Found ${games.length} games for ${playerInfo.teamName} today!`);
-      
-      // Sort games by start time
-      games.sort((a, b) => a.startTime - b.startTime);
-      
-      // Store games globally
-      scheduledGames = games;
-      
-      // Log game details
-      games.forEach(game => {
-        console.log(`Game: ${game.awayTeam} @ ${game.homeTeam}`);
-        console.log(`Status: ${game.detailedState}`);
-        console.log(`Start time: ${formatTime(game.startTime)} (server local time)`);
-        console.log('---');
-      });
-      
-      // Schedule monitoring to start at game time
-      const firstGame = games[0];
-      const nowMs = Date.now();
-      const gameTimeMs = firstGame.startTime.getTime();
-      const timeDiff = gameTimeMs - nowMs;
-      
-      if (timeDiff > 0) {
-        console.log(`Will start monitoring at ${formatTime(firstGame.startTime)} - ${Math.round(timeDiff / 60000)} minutes from now`);
+    try {
+        const now = new Date();
+        console.log(`[${formatTime(now)}] Checking for games today...`);
         
-        // Schedule the monitoring to start at game time
-        setTimeout(() => {
-          console.log(`Starting game monitoring at ${formatTime(new Date())}...`);
-          startMonitoring();
-        }, timeDiff);
-      } else {
-        // Game is already in progress, begin monitoring now
-        console.log(`Game already in progress. Starting monitoring now at ${formatTime(new Date())}.`);
-        startMonitoring();
-      }
-      
-      // Also set up a midnight timeout to stop everything if we're still running
-      scheduleMidnightShutdown();
-      
-      return true;
-    } else {
-      console.log(`No games scheduled for ${playerInfo.teamName} today (${todayDate}).`);
-      todaysGamesCompleted = true;
-      return false;
+        // Reset tracking variables for a new day
+        playerInGame = false;
+        notifiedGames.clear();
+        todaysGamesCompleted = false;
+        scheduledGames = [];
+        
+        // Get player's team info
+        const playerInfo = await getPlayerTeamInfo();
+        if (!playerInfo || !playerInfo.leagueLevel) {
+            console.log('Could not determine player\'s team or league level. Will check again later.');
+            return false;
+        }
+        
+        // Get schedule for today
+        const todayDate = getTodayDate();
+        const response = await fetch(`${MILB_API_BASE}/schedule/games/?sportId=${playerInfo.leagueLevel}&date=${todayDate}`);
+        
+        if (!response.ok) {
+            throw new Error(`Failed to fetch schedule: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        
+        // Check if our team has a game today
+        let teamHasGame = false;
+        let games = [];
+        
+        if (data.dates && data.dates.length > 0) {
+            for (const date of data.dates) {
+                for (const game of date.games) {
+                    // Check if our team is playing
+                    if (game.teams.away.team.id.toString() === playerInfo.teamId.toString() || 
+                        game.teams.home.team.id.toString() === playerInfo.teamId.toString()) {
+                        teamHasGame = true;
+                        
+                        // Convert game time from UTC to server local time
+                        const gameDateTime = convertToServerTime(game.gameDate);
+                        
+                        games.push({
+                            id: game.gamePk,
+                            status: game.status.abstractGameState,
+                            detailedState: game.status.detailedState,
+                            link: game.link,
+                            startTime: gameDateTime,
+                            homeTeam: game.teams.home.team.name,
+                            awayTeam: game.teams.away.team.name,
+                            rawStartTime: game.gameDate
+                        });
+                    }
+                }
+            }
+        }
+        
+        if (teamHasGame) {
+            console.log(`Found ${games.length} games for ${playerInfo.teamName} today!`);
+            
+            // Sort games by start time
+            games.sort((a, b) => a.startTime - b.startTime);
+            
+            // Store games globally
+            scheduledGames = games;
+            
+            // Log game details
+            games.forEach(game => {
+                console.log(`Game: ${game.awayTeam} @ ${game.homeTeam}`);
+                console.log(`Status: ${game.detailedState}`);
+                console.log(`Start time: ${formatTime(game.startTime)} (server local time)`);
+                console.log('---');
+            });
+            
+            // Schedule monitoring to start at game time
+            const firstGame = games[0];
+            const nowMs = Date.now();
+            const gameTimeMs = firstGame.startTime.getTime();
+            const timeDiff = gameTimeMs - nowMs;
+            
+            if (timeDiff > 0) {
+                console.log(`Will start monitoring at ${formatTime(firstGame.startTime)} - ${Math.round(timeDiff / 60000)} minutes from now`);
+                
+                // Schedule the monitoring to start at game time
+                setTimeout(() => {
+                    console.log(`Starting game monitoring at ${formatTime(new Date())}...`);
+                    startMonitoring();
+                }, timeDiff);
+            } else {
+                // Game is already in progress, begin monitoring now
+                console.log(`Game already in progress. Starting monitoring now at ${formatTime(new Date())}.`);
+                startMonitoring();
+            }
+            
+            // Also set up a midnight timeout to stop everything if we're still running
+            scheduleMidnightShutdown();
+            
+            return true;
+        } else {
+            console.log(`No games scheduled for ${playerInfo.teamName} today (${todayDate}).`);
+            todaysGamesCompleted = true;
+            return false;
+        }
+    } catch (error) {
+        console.error("Error checking for games:", error.message);
+        return false;
     }
-  } catch (error) {
-    console.error("Error checking for games:", error.message);
-    return false;
-  }
 }
 
 // Function to schedule a shutdown at midnight
@@ -740,8 +769,6 @@ function setupDailyCheck() {
 console.log('=== Starting MiLB Player Entry Notification Service ===');
 console.log(`Server running in time zone: ${serverTimeZone}`);
 console.log(`Monitoring for player: ${config.PLAYER_NAME} (ID: ${config.PLAYER_ID})`);
-console.log(`Team ID: ${config.TEAM_ID}`);
-console.log(`League level: ${config.LEAGUE_LEVEL}`);
 console.log(`Checking interval: every ${config.CHECK_INTERVAL / 60000} minute(s)`);
 console.log(`All times will be displayed in server's local time.`);
 console.log(`Console logs are being saved to: ${logFilePath}`);

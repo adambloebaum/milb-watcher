@@ -2,6 +2,7 @@ logs/
 data/
 node_modules/
 config.js
+milb-watcher.service
 .env
 *.log
 .DS_Store
