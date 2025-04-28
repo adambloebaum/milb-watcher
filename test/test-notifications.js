@@ -6,14 +6,13 @@ const TEST_CONFIG = {
     EMAIL_CONFIG: {
         service: 'gmail',
         auth: {
-            user: 'your-email@gmail.com',
-            pass: 'your-app-password'
-        },
-        from: 'MiLB Watcher <your-email@gmail.com>'
+            user: 'your-emaail@gmail.com', // Replace with your Gmail address
+            pass: 'your-app-password'     // Replace with your Gmail App Password
+        }
     },
     SMS_RECIPIENTS: [
         {
-            phoneNumber: '1234567890',
+            phoneNumber: '9199959277',
             carrier: 'verizon'
         }
         // Add more test recipients as needed

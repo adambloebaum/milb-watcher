@@ -5,10 +5,6 @@ module.exports = {
     // Player Config
     PLAYER_ID: '123456', // Your player ID
     PLAYER_NAME: 'John Smith', // Player's name for notifications
-    TEAM_ID: '123', // Player's team ID
-  
-    // League Config
-    LEAGUE_LEVEL: '14', // Class A league level
     
     // Notification Config
     SMS_RECIPIENTS: [

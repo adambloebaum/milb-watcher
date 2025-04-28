@@ -180,10 +180,7 @@ if (config.EMAIL_CONFIG && config.EMAIL_CONFIG.auth && config.EMAIL_CONFIG.auth.
 
 // API endpoints
 const MILB_API_BASE = 'https://statsapi.mlb.com/api/v1';
-// sportId codes: 11=Triple-A, 12=Double-A, 13=Class A Adv, 14=Class A, 15=Class A Short, 16=Rookie, 5442=Dominican Summer League
-const SCHEDULE_ENDPOINT = `${MILB_API_BASE}/schedule/games/?sportId=`;
-const GAME_ENDPOINT = `${MILB_API_BASE}/game/`;
-const PLAYER_ENDPOINT = `${MILB_API_BASE}/people/${config.PLAYER_ID}`;
+const PLAYER_ENDPOINT = `${MILB_API_BASE}/people/${config.PLAYER_ID}?hydrate=currentTeam`;
 
 // Track games we've already found the player in to avoid duplicate notifications
 const notifiedGames = new Set();
@@ -202,7 +199,6 @@ console.log(`Server time zone detected as: ${serverTimeZone}`);
 
 // Function to convert UTC ISO date to server local time
 function convertToServerTime(dateString) {
-  // Parse the ISO date string and convert to local time
   return new Date(dateString);
 }
 
@@ -223,6 +219,30 @@ function getTodayDateString() {
   return today.toISOString().split('T')[0];
 }
 
+// Function to get player's current team and league level
+async function getPlayerTeamInfo() {
+  try {
+    const response = await fetch(PLAYER_ENDPOINT);
+    if (!response.ok) {
+      throw new Error(`Failed to fetch player data: ${response.status}`);
+    }
+    
+    const data = await response.json();
+    if (data.people && data.people.length > 0) {
+      const player = data.people[0];
+      return {
+        teamId: player.currentTeam?.id,
+        teamName: player.currentTeam?.name,
+        leagueLevel: player.currentTeam?.parentOrgId ? '14' : null // Default to Class A if in minors
+      };
+    }
+    return null;
+  } catch (error) {
+    console.error('Error getting player team info:', error.message);
+    return null;
+  }
+}
+
 // Function to check if there are games today and schedule monitoring
 async function checkForGamesToday() {
   try {
@@ -235,9 +255,16 @@ async function checkForGamesToday() {
     todaysGamesCompleted = false;
     scheduledGames = [];
     
+    // Get player's team info
+    const playerInfo = await getPlayerTeamInfo();
+    if (!playerInfo || !playerInfo.teamId) {
+      console.log('Could not determine player\'s team. Will check again later.');
+      return false;
+    }
+    
     // Get schedule for today
     const todayDate = getTodayDate();
-    const response = await fetch(`${SCHEDULE_ENDPOINT}${config.LEAGUE_LEVEL}&date=${todayDate}`);
+    const response = await fetch(`${MILB_API_BASE}/schedule/games/?sportId=${playerInfo.leagueLevel}&date=${todayDate}`);
     
     if (!response.ok) {
       throw new Error(`Failed to fetch schedule: ${response.status}`);
@@ -253,9 +280,8 @@ async function checkForGamesToday() {
       for (const date of data.dates) {
         for (const game of date.games) {
           // Check if our team is playing
-          if (config.TEAM_ID && (
-              game.teams.away.team.id.toString() === config.TEAM_ID || 
-              game.teams.home.team.id.toString() === config.TEAM_ID)) {
+          if (game.teams.away.team.id.toString() === playerInfo.teamId.toString() || 
+              game.teams.home.team.id.toString() === playerInfo.teamId.toString()) {
             teamHasGame = true;
             
             // Convert game time from UTC to server local time
@@ -269,7 +295,7 @@ async function checkForGamesToday() {
               startTime: gameDateTime,
               homeTeam: game.teams.home.team.name,
               awayTeam: game.teams.away.team.name,
-              rawStartTime: game.gameDate // Store original time for debugging
+              rawStartTime: game.gameDate
             });
           }
         }
@@ -277,7 +303,7 @@ async function checkForGamesToday() {
     }
     
     if (teamHasGame) {
-      console.log(`Found ${games.length} games for your team today!`);
+      console.log(`Found ${games.length} games for ${playerInfo.teamName} today!`);
       
       // Sort games by start time
       games.sort((a, b) => a.startTime - b.startTime);
@@ -290,7 +316,6 @@ async function checkForGamesToday() {
         console.log(`Game: ${game.awayTeam} @ ${game.homeTeam}`);
         console.log(`Status: ${game.detailedState}`);
         console.log(`Start time: ${formatTime(game.startTime)} (server local time)`);
-        console.log(`Original API time (UTC): ${game.rawStartTime}`);
         console.log('---');
       });
       
@@ -319,7 +344,7 @@ async function checkForGamesToday() {
       
       return true;
     } else {
-      console.log(`No games scheduled for your team today (${todayDate}).`);
+      console.log(`No games scheduled for ${playerInfo.teamName} today (${todayDate}).`);
       todaysGamesCompleted = true;
       return false;
     }
@@ -442,7 +467,7 @@ async function getTodaysGames() {
   try {
     // Based on the MLB API documentation, we're using the correct endpoint for the league level
     const todayDate = getTodayDate();
-    const response = await fetch(`${SCHEDULE_ENDPOINT}${config.LEAGUE_LEVEL}&date=${todayDate}`);
+    const response = await fetch(`${MILB_API_BASE}/schedule/games/?sportId=${config.LEAGUE_LEVEL}&date=${todayDate}`);
     
     if (!response.ok) {
       throw new Error(`Failed to fetch schedule: ${response.status}`);
