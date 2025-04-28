@@ -1,0 +1,20 @@
+[Unit]
+Description=MiLB Player Game Entry Notification Service
+After=network.target
+
+[Service]
+Type=simple
+User=yourusername
+WorkingDirectory=/path/to/milb-watcher
+ExecStart=/usr/bin/node /path/to/milb-watcher/index.js
+Restart=on-failure
+RestartSec=10
+Environment=NODE_ENV=production
+
+# Logging configuration
+StandardOutput=syslog
+StandardError=syslog
+SyslogIdentifier=milb-watcher
+
+[Install]
+WantedBy=multi-user.target 

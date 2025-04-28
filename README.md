@@ -23,6 +23,157 @@ A notification system that alerts you when a MiLB player enters a game.
   - Automatically cleans up log files older than 30 days
   - Provides HTTP endpoints for health checks and status
 
+## Server Setup
+
+### Prerequisites
+
+- A Linux server (Ubuntu/Debian recommended)
+- Node.js (v12 or higher)
+- npm
+- Email account for sending SMS notifications
+- Git (for deployment)
+
+### Installation Steps
+
+1. **Install Node.js and npm**:
+   ```bash
+   # For Ubuntu/Debian
+   curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
+   sudo apt-get install -y nodejs
+   ```
+
+2. **Create a service user** (recommended for security):
+   ```bash
+   sudo useradd -r -s /bin/false milbwatcher
+   ```
+
+3. **Clone the repository**:
+   ```bash
+   sudo mkdir -p /opt/milb-watcher
+   sudo chown milbwatcher:milbwatcher /opt/milb-watcher
+   sudo -u milbwatcher git clone https://github.com/yourusername/milb-watcher.git /opt/milb-watcher
+   ```
+
+4. **Install dependencies**:
+   ```bash
+   cd /opt/milb-watcher
+   sudo -u milbwatcher npm install
+   ```
+
+5. **Configure the application**:
+   ```bash
+   sudo -u milbwatcher cp example_config.js config.js
+   sudo -u milbwatcher nano config.js  # Edit with your settings
+   ```
+
+6. **Set up the systemd service**:
+   ```bash
+   # Copy the service file
+   sudo cp milb-watcher.service /etc/systemd/system/
+   
+   # Edit the service file with correct paths
+   sudo nano /etc/systemd/system/milb-watcher.service
+   ```
+   
+   Update these lines in the service file:
+   ```ini
+   User=milbwatcher
+   WorkingDirectory=/opt/milb-watcher
+   ExecStart=/usr/bin/node /opt/milb-watcher/index.js
+   ```
+
+7. **Enable and start the service**:
+   ```bash
+   sudo systemctl daemon-reload
+   sudo systemctl enable milb-watcher
+   sudo systemctl start milb-watcher
+   ```
+
+8. **Verify the service is running**:
+   ```bash
+   sudo systemctl status milb-watcher
+   ```
+
+### Managing the Service
+
+- **Start the service**: `sudo systemctl start milb-watcher`
+- **Stop the service**: `sudo systemctl stop milb-watcher`
+- **Restart the service**: `sudo systemctl restart milb-watcher`
+- **Check service status**: `sudo systemctl status milb-watcher`
+- **View service logs**: `sudo journalctl -u milb-watcher -f`
+
+### Logging
+
+The service logs to the system journal by default. You can view logs with:
+```bash
+# View all logs
+sudo journalctl -u milb-watcher
+
+# Follow logs in real-time
+sudo journalctl -u milb-watcher -f
+
+# View logs from today
+sudo journalctl -u milb-watcher --since today
+```
+
+Application-specific logs are still written to the `logs` directory in the application folder.
+
+### Updating the Application
+
+1. **Stop the service**:
+   ```bash
+   sudo systemctl stop milb-watcher
+   ```
+
+2. **Update the code**:
+   ```bash
+   cd /opt/milb-watcher
+   sudo -u milbwatcher git pull
+   sudo -u milbwatcher npm install
+   ```
+
+3. **Restart the service**:
+   ```bash
+   sudo systemctl start milb-watcher
+   ```
+
+### Troubleshooting
+
+1. **Service won't start**:
+   - Check logs: `sudo journalctl -u milb-watcher`
+   - Verify permissions: `sudo ls -la /opt/milb-watcher`
+   - Check Node.js version: `node -v`
+
+2. **No notifications**:
+   - Verify email configuration in `config.js`
+   - Check service logs for errors
+   - Test email configuration manually
+
+3. **Permission issues**:
+   - Ensure the `milbwatcher` user owns the application directory:
+     ```bash
+     sudo chown -R milbwatcher:milbwatcher /opt/milb-watcher
+     ```
+
+4. **Disk space issues**:
+   - Monitor log file sizes
+   - Set up log rotation if needed
+
+### Security Considerations
+
+1. **File Permissions**:
+   - Keep `config.js` readable only by the service user
+   - Restrict access to the application directory
+
+2. **Network Security**:
+   - The service runs an HTTP server on port 8080 by default
+   - Consider using a reverse proxy (nginx/apache) for production
+   - Implement firewall rules to restrict access
+
+3. **Service User**:
+   - Use a dedicated service user with minimal permissions
+   - Don't run the service as root
+
 ## Setup
 
 ### Prerequisites
