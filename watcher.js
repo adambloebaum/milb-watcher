@@ -2,7 +2,7 @@
 async function checkAndNotify() {
     try {
       const timestamp = formatTime(new Date());
-      // console.log(`[${timestamp}] Checking for player...`); // Reduce console spam
+      console.log(`[${timestamp}] Checking for player...`);
       
       // Reset player status at beginning of check if we're not already tracking them in a game
       if (!playerInGame) {
@@ -11,59 +11,57 @@ async function checkAndNotify() {
       
       // Use scheduled games if available, otherwise fetch new data
       let games = scheduledGames.length > 0 ? 
-        scheduledGames.filter(game => game.status === 'Live') : 
+        scheduledGames.filter(game => game.status === 'Live' || game.status === 'Preview' || game.status === 'Pre-Game') : 
         await getTodaysGames();
         
       if (games.length === 0) {
-        return; // Silent return to reduce console spam
+        console.log("No games to check.");
+        return;
       }
       
       // Check each game for the player
       for (const game of games) {
-        if (game.status === 'Live') {
-          const playerEntered = await checkPlayerInGame(game.id, game.link);
+        console.log(`Checking game ${game.id} (${game.awayTeam} @ ${game.homeTeam}) - Status: ${game.status}`);
+        const playerEntered = await checkPlayerInGame(game.id, game.link);
+        
+        if (playerEntered) {
+          await sendNotification(game.id);
           
-          if (playerEntered) {
-            await sendNotification(game.id);
-            
-            // If configured to stop after entry, prepare to stop monitoring
-            if (config.STOP_AFTER_ENTRY) {
-              console.log("Player has entered the game. Will stop monitoring until tomorrow's check.");
-            }
-            
-            // Save the entry info to a log file
-            const entryInfo = {
-              timestamp: new Date().toISOString(),
-              localTimestamp: new Date().toLocaleString(),
-              gameId: game.id,
-              playerName: config.PLAYER_NAME,
-              playerId: config.PLAYER_ID
-            };
-            
-            // Create logs directory if it doesn't exist
-            if (!fs.existsSync('./logs')) {
-              fs.mkdirSync('./logs');
-            }
-            
-            // Write to log file
-            const logPath = path.join('./logs', `entry-log-${getTodayDateString()}.json`);
-            let logs = [];
-            
-            // Read existing logs if file exists
-            if (fs.existsSync(logPath)) {
-              try {
-                logs = JSON.parse(fs.readFileSync(logPath, 'utf8'));
-              } catch (e) {
-                console.error('Error reading log file:', e.message);
-              }
-            }
-            
-            // Add new entry and write to file
-            logs.push(entryInfo);
-            fs.writeFileSync(logPath, JSON.stringify(logs, null, 2), 'utf8');
+          // If configured to stop after entry, prepare to stop monitoring
+          if (config.STOP_AFTER_ENTRY) {
+            console.log("Player has entered the game. Will stop monitoring until tomorrow's check.");
           }
-        } else {
-          console.log(`Game ${game.id} not started yet (${game.detailedState || 'Preview'}). Will check later.`);
+          
+          // Save the entry info to a log file
+          const entryInfo = {
+            timestamp: new Date().toISOString(),
+            localTimestamp: new Date().toLocaleString(),
+            gameId: game.id,
+            playerName: config.PLAYER_NAME,
+            playerId: config.PLAYER_ID
+          };
+          
+          // Create logs directory if it doesn't exist
+          if (!fs.existsSync('./logs')) {
+            fs.mkdirSync('./logs');
+          }
+          
+          // Write to log file
+          const logPath = path.join('./logs', `entry-log-${getTodayDateString()}.json`);
+          let logs = [];
+          
+          // Read existing logs if file exists
+          if (fs.existsSync(logPath)) {
+            try {
+              logs = JSON.parse(fs.readFileSync(logPath, 'utf8'));
+            } catch (e) {
+              console.error('Error reading log file:', e.message);
+            }
+          }
+          
+          // Add new entry and write to file
+          logs.push(entryInfo);
+          fs.writeFileSync(logPath, JSON.stringify(logs, null, 2), 'utf8');
         }
       }
       
@@ -73,7 +71,7 @@ async function checkAndNotify() {
     } catch (error) {
       console.error('Error in check and notify process:', error.message);
     }
-  }
+}
 
 // MiLB Player Game Entry Notification Script
 const fetch = require('node-fetch');
@@ -455,22 +453,27 @@ function stopMonitoring() {
 // Function to update game statuses
 async function updateGameStatuses() {
   try {
-    // console.log("Updating game statuses..."); // Reduce console spam
+    console.log("Updating game statuses...");
     
     const updatedGames = [];
     
     for (const game of scheduledGames) {
+      console.log(`Checking status for game ${game.id} (${game.awayTeam} @ ${game.homeTeam})`);
       const response = await fetch(`${MILB_API_BASE}${game.link}`);
       
       if (response.ok) {
         const data = await response.json();
         const oldStatus = game.status;
+        const oldDetailedState = game.detailedState;
+        
         game.status = data.gameData.status.abstractGameState;
         game.detailedState = data.gameData.status.detailedState;
         
-        // Only log if status changed
-        if (oldStatus !== game.status) {
-          console.log(`Game ${game.id} status changed: ${game.detailedState}`);
+        // Log status changes
+        if (oldStatus !== game.status || oldDetailedState !== game.detailedState) {
+          console.log(`Game ${game.id} status changed:`);
+          console.log(`  From: ${oldStatus} (${oldDetailedState})`);
+          console.log(`  To: ${game.status} (${game.detailedState})`);
           
           if (game.status === 'Live' && oldStatus !== 'Live') {
             console.log(`Game ${game.id} is now live! Starting to check for player entry.`);
@@ -480,6 +483,8 @@ async function updateGameStatuses() {
             console.log(`Game ${game.id} has ended.`);
           }
         }
+      } else {
+        console.error(`Failed to fetch game status for game ${game.id}: ${response.status}`);
       }
       
       updatedGames.push(game);
@@ -559,26 +564,30 @@ async function checkPlayerInGame(gameId, gameLink) {
     const data = await response.json();
     const teams = [data.teams.home, data.teams.away];
     
-    // Check if player is in the game (either as starter or entered as substitute)
+    // Check if player is in the game and has participated
     for (const team of teams) {
       // Check active players (already in the game)
       const activePlayers = Object.values(team.players || {});
       for (const player of activePlayers) {
         if (player.person && player.person.id && player.person.id.toString() === config.PLAYER_ID) {
-          // Also check if player is in a batting position or has entered the game
-          const hasEntered = player.gameStatus && player.gameStatus.isCurrentBatter || 
-                             player.stats && player.stats.batting && 
-                             (player.stats.batting.atBats > 0 || player.stats.batting.hits > 0 || 
-                             player.stats.batting.baseOnBalls > 0);
+          // Check if player has participated in the game
+          const hasParticipated = 
+            // For pitchers: has pitched (innings pitched > 0 or pitches thrown > 0)
+            (player.stats && player.stats.pitching && 
+             (player.stats.pitching.inningsPitched > 0 || player.stats.pitching.pitchesThrown > 0)) ||
+            // For batters: has batted (at bats > 0 or plate appearances > 0)
+            (player.stats && player.stats.batting && 
+             (player.stats.batting.atBats > 0 || player.stats.batting.plateAppearances > 0));
                                
-          if (!playerInGame && hasEntered) {
+          if (!playerInGame && hasParticipated) {
             // Player just entered the game
             playerInGame = true;
             notifiedGames.add(gameId);
+            console.log(`${config.PLAYER_NAME} has entered the game for ${team.team.name}`);
             return true;
           }
-          // Player was already in game or hasn't entered yet
-          if (hasEntered) {
+          // Player was already in game or hasn't participated yet
+          if (hasParticipated) {
             playerInGame = true;
           }
           return false;
@@ -596,23 +605,6 @@ async function checkPlayerInGame(gameId, gameLink) {
               return true;
             }
             // Player was already in game
-            playerInGame = true;
-            return false;
-          }
-        }
-      }
-      
-      // Also check bench players who might have entered the game
-      const benchPlayers = team.bench || [];
-      for (const player of benchPlayers) {
-        if (player.id && player.id.toString() === config.PLAYER_ID) {
-          // Check if there's any indication they've entered the game
-          if (player.battingOrder || player.stats) {
-            if (!playerInGame) {
-              playerInGame = true;
-              notifiedGames.add(gameId);
-              return true;
-            }
             playerInGame = true;
             return false;
           }
